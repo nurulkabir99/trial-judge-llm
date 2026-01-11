@@ -1,0 +1,41 @@
+{
+  "pypi": [
+    "requests",
+    "numpy",
+    "pandas",
+    "flask",
+    "scikit-learn",
+    "pytest"
+  ],
+  "npm": [
+    "lodash",
+    "axios",
+    "express",
+    "react",
+    "typescript",
+    "jest"
+  ],
+  "cpp": [
+    "openssl",
+    "curl",
+    "zlib",
+    "ffmpeg",
+    "libpng",
+    "opencv"
+  ],
+  "high_risk_copyleft": {
+    "gpl": [
+      "busybox",
+      "ffmpeg-gpl",
+      "samba"
+    ],
+    "lgpl": [
+      "glibc",
+      "libav"
+    ],
+    "mpl": [
+      "spidermonkey",
+      "mozilla-central"
+    ]
+  }
+}

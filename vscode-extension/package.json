@@ -1,0 +1,44 @@
+{
+  "name": "sca-llm-extension",
+  "displayName": "LLM License & Management",
+  "description": "Automatically analyze code for similarity, derivative work, and potential license conflicts using your local LLM + n8n + Qdrant backend.",
+  "version": "0.0.1",
+  "publisher": "yourname",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Other",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onDidSaveTextDocument"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./"
+  },
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "LLM SCA Settings",
+      "properties": {
+        "scaLLM.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:5678/webhook/sca-trial",
+          "description": "URL of your n8n webhook that performs similarity + license analysis."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.106.1",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.5.0"
+  }
+}

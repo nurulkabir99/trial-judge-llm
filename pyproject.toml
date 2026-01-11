@@ -1,0 +1,20 @@
+[project]
+name = "llmproject"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.123.0",
+    "jupyterlab>=4.5.0",
+    "matplotlib>=3.10.7",
+    "pygithub>=2.8.1",
+    "python-dotenv>=1.2.1",
+    "qdrant-client>=1.16.1",
+    "requests>=2.32.5",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+    "tqdm>=4.67.1",
+    "unsloth>=2025.11.4",
+    "uvicorn>=0.38.0",
+]

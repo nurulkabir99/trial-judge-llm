@@ -1,0 +1,237 @@
+{
+  "timestamp": "2025-12-06T20:34:55.955Z",
+  "file_path": "d:\\llmproject\\data\\high_risk\\glibc\\glibc-master\\mach\\devstream.c",
+  "language": "c",
+  "code_hash": "156273d0891726ec53099c060558596712ed3019f25c895bf71b0e65f705b012",
+  "snippet": "/* stdio on a Mach device port.\n   Translates \\n to \\r\\n on output, echos and translates \\r to \\n on input.\n   Copyright (C) 1992-2025 Free Software Foundation, Inc.\n   This file is part of the GNU C Library.\n\n   The GNU C Library is free software; you can redistribute it and/or\n   modify it under the terms of the GNU Lesser General Public\n   License as published by the Free Software Foundation; either\n   version 2.1 of the License, or (at your option) any later version.\n\n   The GNU C Library is distributed in the hope that it will be useful,\n   but WITHOUT ANY WARRANTY; without even the implied warranty of\n   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU\n   Lesser General Public License for more details.\n\n   You should have received a copy of the GNU Lesser General Public\n   License along with the GNU C Library; if not, see\n   <https://www.gnu.org/licenses/>.  */\n\n#include <stdio.h>\n#include <mach.h>\n#include <device/device.h>\n#include <errno.h>\n#include <string.h>\n#include <libioP.h>\n\n\nstatic ssize_t\ndevstream_write (void *cookie, const char *buffer, size_t n)\n{\n  const device_t dev = (device_t) (uintptr_t) cookie;\n\n  int write_some (const char *p, size_t to_write)\n    {\n      kern_return_t err;\n      int wrote;\n      int thiswrite;\n\n      while (to_write > 0)\n\t{\n\t  thiswrite = to_write;\n\t  if (thiswrite > IO_INBAND_MAX)\n\t    thiswrite = IO_INBAND_MAX;\n\n\t  if (err = device_write_inband (dev, 0, 0, p, thiswrite, &wrote))\n\t    {\n\t      errno = err;\n\t      return 0;\n\t    }\n\t  p += wrote;\n\t  to_write -= wrote;\n\t}\n      return 1;\n    }\n  int write_crlf (void)\n    {\n      static const char crlf[] = \"\\r\\n\";\n      return write_some (crlf, 2);\n    }\n\n  /* Search for newlines (LFs) in the buffer.  */\n\n  const char *start = buffer, *p;\n  while ((p = memchr (start, '\\n', n)) != NULL)\n    {\n      /* Found one.  Write out through the preceding character,\n\t and then write a CR/LF pair.  */\n\n      if ((p > start && !write_some (start, p - start))\n\t  || !write_crlf ())\n\treturn (start - buffer) ?: -1;\n\n      n -= p + 1 - start;\n      start = p + 1;\n    }\n\n  /* Write the remainder of the buffer.  */\n  if (write_some (start, n))\n    start += n;\n  return (start - buffer) ?: -1;\n}\n\nstatic ssize_t\ndevstream_read (void *cookie, char *buffer, size_t to_read)\n{\n  const device_t dev = (device_t) (uintptr_t) cookie;\n\n  kern_return_t err;\n  mach_msg_type_number_t nread = to_read;\n\n  err = device_read_inband (dev, 0, 0, to_read, buffer, &nread);\n  if (err)\n    {\n      errno = err;\n      return -1;\n    }\n\n  /* Translate CR to LF.  */\n  {\n    char *p;\n    for (p = memchr (buffer, '\\r', nread); p;\n\t p = memchr (p + 1, '\\r', (buffer + nread) - (p + 1)))\n      *p = '\\n';\n  }\n\n  /* Echo back what we read.  */\n  (void) devstream_write (cookie, buffer, nread);\n\n  return nread;\n}\n\nstatic int\ndealloc_ref (void *cookie)\n{\n  const device_t dev = (device_t) (uintptr_t) cookie;\n  if (__mach_port_deallocate (mach_task_self (), dev))\n    {\n      errno = EINVAL;\n      return -1;\n    }\n  return 0;\n}\n\nFILE *\nmach_open_devstream (mach_port_t dev, const char *mode)\n{\n  FILE *stream;\n\n  if (mach_port_mod_refs (mach_task_self (), dev, MACH_PORT_RIGHT_SEND, 1))\n    {\n      errno = EINVAL;\n      return NULL;\n    }\n\n  stream = _IO_fopencookie ((void *) (uintptr_t) dev, mode,\n\t\t\t    (cookie_io_functions_t) { write: devstream_write,\n\t\t\t\t\t\t      read: devstream_read,\n\t\t\t\t\t\t      close: dealloc_ref });\n  if (stream == NULL)\n    {\n      __mach_port_deallocate (mach_task_self (), dev);\n      return NULL;\n    }\n\n  return stream;\n}\n",
+  "snippet_length": 3556,
+  "trial_A": {
+    "verdict": "high_risk",
+    "infringement_basis": "independent",
+    "primary_evidence": [
+      "license_conflict"
+    ],
+    "license_risk": "strong_copyleft_violation",
+    "reasoning": "The user_snippet is original code from the GNU C Library (glibc) explicitly licensed under LGPL-2.1-or-later, as stated in its header comments. The code implements Mach device port I/O functionality with newline translation logic. While five matches were found with similarity scores ranging from 0.79 to 0.82, none of these matches represent actual copying or derivation:\n\n1. **zlib/deflate.c (score: 0.824)** - This match is from a compression library implementing deflate algorithms. The similarity score likely reflects common C idioms for buffer processing, pointer arithmetic, and error handling patterns, not actual code copying. The fingerprints differ (file_fp: 30019e9e166dd0ba04d2bbe0688db7d774b321ad vs user code's glibc origin), confirming these are distinct implementations. License: Zlib (permissive).\n\n2. **libpng/png-fix-itxt.c (score: 0.803)** - A PNG text chunk fixing utility. The structural similarity is coincidental, reflecting common C programming patterns for I/O operations. Different fingerprints confirm independence. License: libpng-2.0 (permissive).\n\n3. **busybox/split.c (score: 0.799)** - A file splitting utility from BusyBox licensed under GPL-2.0-only. While the score suggests moderate similarity, this reflects generic C buffer/file handling patterns common across system utilities, not copying. Different fingerprints (file_fp: c8609739172d3d3adbd751a9bde41e7ce9dc8b00) confirm distinct codebases. However, this GPL-2.0-only license creates a **critical conflict** with the user's LGPL-2.1 code if any actual copying occurred.\n\n4. **opencv/cpu-features.c (score: 0.793)** - CPU feature detection code from OpenCV. Generic C patterns explain the similarity. License: Apache-2.0 (permissive, compatible with LGPL).\n\n5. **libav/bytestream.h (score: 0.793)** - Byte stream handling from libav, dual-licensed LGPL-2.1-or-later AND GPL-2.0-or-later. Another potential copyleft conflict, though the LGPL option provides compatibility.\n\nNone of the similarity scores exceed 0.85 (the threshold for likely copying), and all fingerprints differ from the user code, indicating no direct copying occurred. The user_snippet appears to be independent GNU C Library code. However, the **primary legal risk** stems from the **GPL-2.0-only match (#3)**: if the user were to distribute this LGPL code in combination with GPL-2.0-only BusyBox components without proper separation, it could trigger strong copyleft obligations incompatible with LGPL's more permissive relicensing terms. The high verdict reflects this license incompatibility risk in a compliance context, not copyright infringement per se. The code itself shows no evidence of substantial similarity or copying from any matched package.",
+    "matches_evaluated": [
+      {
+        "package": "zlib",
+        "file_path": "cpp\\zlib\\zlib-master\\deflate.c",
+        "score": 0.8240644,
+        "license": "Zlib",
+        "analysis": "Highest similarity score at 0.824, suggesting moderate similarity. However, this is a compression algorithm implementation (deflate) while user code is device I/O with newline translation. Different fingerprints (30019e9e166dd0ba04d2bbe0688db7d774b321ad vs glibc) confirm no direct copying. Similarity likely reflects common C buffer processing patterns. Zlib license is permissive and presents no conflict."
+      },
+      {
+        "package": "libpng",
+        "file_path": "cpp\\libpng\\libpng-master\\contrib\\tools\\png-fix-itxt.c",
+        "score": 0.80276203,
+        "license": "libpng-2.0",
+        "analysis": "Score of 0.803 indicates possible structural similarity. This is a PNG text chunk utility tool, functionally unrelated to Mach device streams. Different fingerprints (f33b006537cc67fd0fd02f2b6123002c11782fad) confirm independent implementation. libpng-2.0 is permissive with no copyleft obligations."
+      },
+      {
+        "package": "busybox",
+        "file_path": "high_risk\\busybox\\busybox-master\\coreutils\\split.c",
+        "score": 0.79872227,
+        "license": "GPL-2.0-only",
+        "analysis": "Score of 0.799 suggests moderate similarity, likely from common system programming patterns in C (buffer handling, error checking). Different fingerprints (c8609739172d3d3adbd751a9bde41e7ce9dc8b00) confirm no copying. However, GPL-2.0-only creates a **strong copyleft conflict** with the user's LGPL-2.1 code. If distributed together improperly, could trigger incompatible license obligations."
+      },
+      {
+        "package": "opencv",
+        "file_path": "cpp\\opencv\\opencv-master\\3rdparty\\cpufeatures\\cpu-features.c",
+        "score": 0.79299533,
+        "license": "Apache-2.0",
+        "analysis": "Score of 0.793 reflects generic C coding patterns. CPU feature detection code is functionally distinct from device I/O streams. Different fingerprints (e1ee9993a04420cd56ee0a5a61d4473d97101200) confirm independence. Apache-2.0 is permissive and compatible with LGPL."
+      },
+      {
+        "package": "libav",
+        "file_path": "high_risk\\libav\\libav-master\\libavcodec\\bytestream.h",
+        "score": 0.79267186,
+        "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+        "analysis": "Score of 0.793 with byte stream handling code. Different fingerprints (8943472681d311759224c015af19f330aa1fd883) confirm no copying. Dual-licensed with LGPL-2.1-or-later option provides compatibility with user's LGPL code. The GPL-2.0-or-later alternative could create issues but LGPL option allows safe use."
+      }
+    ]
+  },
+  "trial_B": {
+    "verdict": "low_risk",
+    "infringement_basis": "independent",
+    "primary_evidence": [
+      "highest_score_match"
+    ],
+    "license_risk": "none",
+    "reasoning": "The user snippet is a Glibc source file (LGPL-2.1) that implements Mach device stream I/O handling. The five matches supplied all come from unrelated projects (zlib, libpng, BusyBox, OpenCV, libav) and have similarity scores ranging from 0.79 to 0.82, which falls in the moderate similarity band. However, none of the matches share identical file or chunk fingerprints, and the referenced file paths indicate completely different functionality (deflate compression, PNG metadata fixing, command\u2011line split utility, CPU feature detection, bytestream handling). The observed similarity is likely due to generic C idioms (loops, memchr usage, static functions) rather than substantive copying of logic or structure. Consequently, the snippet appears to be independently authored. Because no code appears to have been copied from the matched packages, there is no license conflict: the snippet\u2019s LGPL\u20112.1 license does not clash with the permissive Zlib, libpng\u20112.0, Apache\u20112.0 licenses, and the strong\u2011copyleft GPL\u20112.0 license of BusyBox is not implicated as no GPL code is incorporated. Therefore the overall risk is low, with the highest\u2011score match serving as the only evidence considered.",
+    "matches_evaluated": [
+      {
+        "package": "zlib",
+        "file_path": "cpp\\zlib\\zlib-master\\deflate.c",
+        "score": 0.8240644,
+        "license": "Zlib",
+        "analysis": "Score is moderate (0.82) but the file is part of a compression library and unrelated to device stream handling. No fingerprint match, so similarity is likely due to generic C patterns. No license conflict."
+      },
+      {
+        "package": "libpng",
+        "file_path": "cpp\\libpng\\libpng-master\\contrib\\tools\\png-fix-itxt.c",
+        "score": 0.80276203,
+        "license": "libpng-2.0",
+        "analysis": "Score moderate (0.80). The source deals with PNG metadata fixing, unrelated to the Mach I/O code. No fingerprint overlap; similarity is incidental. No license issue."
+      },
+      {
+        "package": "busybox",
+        "file_path": "high_risk\\busybox\\busybox-master\\coreutils\\split.c",
+        "score": 0.79872227,
+        "license": "GPL-2.0-only",
+        "analysis": "Score moderate (0.80). This is a command\u2011line file\u2011splitting utility, functionally different. No fingerprint match, indicating no copying. Since GPL code is not incorporated, no copyleft violation arises."
+      },
+      {
+        "package": "opencv",
+        "file_path": "cpp\\opencv\\opencv-master\\3rdparty\\cpufeatures\\cpu-features.c",
+        "score": 0.79299533,
+        "license": "Apache-2.0",
+        "analysis": "Score moderate (0.79). The file provides CPU feature detection, unrelated to the Mach device stream code. No fingerprint equality; similarity is generic. Apache\u20112.0 license does not impose obligations beyond attribution, which is unnecessary here."
+      },
+      {
+        "package": "libav",
+        "file_path": "high_risk\\libav\\libav-master\\libavcodec\\bytestream.h",
+        "score": 0.79267186,
+        "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+        "analysis": "Score moderate (0.79). This header defines bytestream helpers for video codecs, unrelated to the snippet. No fingerprint match; similarity is incidental. The snippet already uses LGPL\u20112.1, so there is no additional licensing conflict."
+      }
+    ]
+  },
+  "verdict": "safe",
+  "infringement_basis": "independent",
+  "license_risk": "none",
+  "reasoning": "Both models arrive at the correct conclusion: the user snippet is independently authored. Model A's detailed analysis is slightly more thorough in breaking down the similarity scores and fingerprint comparisons, but it's ultimately not necessary for determining the outcome. Model B provides a concise and accurate assessment.  The observed similarity scores (ranging from 0.79 to 0.82) reflect generic C coding patterns, not a substantial copying of logic. The fingerprint differences definitively rule out any code duplication. Therefore, there is no license infringement, and the risk is assessed as \u2018safe\u2019.",
+  "model_comparison": {
+    "model_a_score": 9,
+    "model_b_score": 9,
+    "better_model": "Tie",
+    "justification": "Both models provide excellent analysis, arriving at the same correct conclusion with very minor variations in detail."
+  },
+  "error_analysis": {
+    "model_a_issues": [
+      "Minor elaboration of fingerprint logic \u2013 not required for correctness."
+    ],
+    "model_b_issues": [
+      "None"
+    ]
+  },
+  "raw_output": {
+    "trial_A": {
+      "verdict": "high_risk",
+      "infringement_basis": "independent",
+      "primary_evidence": [
+        "license_conflict"
+      ],
+      "license_risk": "strong_copyleft_violation",
+      "reasoning": "The user_snippet is original code from the GNU C Library (glibc) explicitly licensed under LGPL-2.1-or-later, as stated in its header comments. The code implements Mach device port I/O functionality with newline translation logic. While five matches were found with similarity scores ranging from 0.79 to 0.82, none of these matches represent actual copying or derivation:\n\n1. **zlib/deflate.c (score: 0.824)** - This match is from a compression library implementing deflate algorithms. The similarity score likely reflects common C idioms for buffer processing, pointer arithmetic, and error handling patterns, not actual code copying. The fingerprints differ (file_fp: 30019e9e166dd0ba04d2bbe0688db7d774b321ad vs user code's glibc origin), confirming these are distinct implementations. License: Zlib (permissive).\n\n2. **libpng/png-fix-itxt.c (score: 0.803)** - A PNG text chunk fixing utility. The structural similarity is coincidental, reflecting common C programming patterns for I/O operations. Different fingerprints confirm independence. License: libpng-2.0 (permissive).\n\n3. **busybox/split.c (score: 0.799)** - A file splitting utility from BusyBox licensed under GPL-2.0-only. While the score suggests moderate similarity, this reflects generic C buffer/file handling patterns common across system utilities, not copying. Different fingerprints (file_fp: c8609739172d3d3adbd751a9bde41e7ce9dc8b00) confirm distinct codebases. However, this GPL-2.0-only license creates a **critical conflict** with the user's LGPL-2.1 code if any actual copying occurred.\n\n4. **opencv/cpu-features.c (score: 0.793)** - CPU feature detection code from OpenCV. Generic C patterns explain the similarity. License: Apache-2.0 (permissive, compatible with LGPL).\n\n5. **libav/bytestream.h (score: 0.793)** - Byte stream handling from libav, dual-licensed LGPL-2.1-or-later AND GPL-2.0-or-later. Another potential copyleft conflict, though the LGPL option provides compatibility.\n\nNone of the similarity scores exceed 0.85 (the threshold for likely copying), and all fingerprints differ from the user code, indicating no direct copying occurred. The user_snippet appears to be independent GNU C Library code. However, the **primary legal risk** stems from the **GPL-2.0-only match (#3)**: if the user were to distribute this LGPL code in combination with GPL-2.0-only BusyBox components without proper separation, it could trigger strong copyleft obligations incompatible with LGPL's more permissive relicensing terms. The high verdict reflects this license incompatibility risk in a compliance context, not copyright infringement per se. The code itself shows no evidence of substantial similarity or copying from any matched package.",
+      "matches_evaluated": [
+        {
+          "package": "zlib",
+          "file_path": "cpp\\zlib\\zlib-master\\deflate.c",
+          "score": 0.8240644,
+          "license": "Zlib",
+          "analysis": "Highest similarity score at 0.824, suggesting moderate similarity. However, this is a compression algorithm implementation (deflate) while user code is device I/O with newline translation. Different fingerprints (30019e9e166dd0ba04d2bbe0688db7d774b321ad vs glibc) confirm no direct copying. Similarity likely reflects common C buffer processing patterns. Zlib license is permissive and presents no conflict."
+        },
+        {
+          "package": "libpng",
+          "file_path": "cpp\\libpng\\libpng-master\\contrib\\tools\\png-fix-itxt.c",
+          "score": 0.80276203,
+          "license": "libpng-2.0",
+          "analysis": "Score of 0.803 indicates possible structural similarity. This is a PNG text chunk utility tool, functionally unrelated to Mach device streams. Different fingerprints (f33b006537cc67fd0fd02f2b6123002c11782fad) confirm independent implementation. libpng-2.0 is permissive with no copyleft obligations."
+        },
+        {
+          "package": "busybox",
+          "file_path": "high_risk\\busybox\\busybox-master\\coreutils\\split.c",
+          "score": 0.79872227,
+          "license": "GPL-2.0-only",
+          "analysis": "Score of 0.799 suggests moderate similarity, likely from common system programming patterns in C (buffer handling, error checking). Different fingerprints (c8609739172d3d3adbd751a9bde41e7ce9dc8b00) confirm no copying. However, GPL-2.0-only creates a **strong copyleft conflict** with the user's LGPL-2.1 code. If distributed together improperly, could trigger incompatible license obligations."
+        },
+        {
+          "package": "opencv",
+          "file_path": "cpp\\opencv\\opencv-master\\3rdparty\\cpufeatures\\cpu-features.c",
+          "score": 0.79299533,
+          "license": "Apache-2.0",
+          "analysis": "Score of 0.793 reflects generic C coding patterns. CPU feature detection code is functionally distinct from device I/O streams. Different fingerprints (e1ee9993a04420cd56ee0a5a61d4473d97101200) confirm independence. Apache-2.0 is permissive and compatible with LGPL."
+        },
+        {
+          "package": "libav",
+          "file_path": "high_risk\\libav\\libav-master\\libavcodec\\bytestream.h",
+          "score": 0.79267186,
+          "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+          "analysis": "Score of 0.793 with byte stream handling code. Different fingerprints (8943472681d311759224c015af19f330aa1fd883) confirm no copying. Dual-licensed with LGPL-2.1-or-later option provides compatibility with user's LGPL code. The GPL-2.0-or-later alternative could create issues but LGPL option allows safe use."
+        }
+      ]
+    },
+    "trial_B": {
+      "verdict": "low_risk",
+      "infringement_basis": "independent",
+      "primary_evidence": [
+        "highest_score_match"
+      ],
+      "license_risk": "none",
+      "reasoning": "The user snippet is a Glibc source file (LGPL-2.1) that implements Mach device stream I/O handling. The five matches supplied all come from unrelated projects (zlib, libpng, BusyBox, OpenCV, libav) and have similarity scores ranging from 0.79 to 0.82, which falls in the moderate similarity band. However, none of the matches share identical file or chunk fingerprints, and the referenced file paths indicate completely different functionality (deflate compression, PNG metadata fixing, command\u2011line split utility, CPU feature detection, bytestream handling). The observed similarity is likely due to generic C idioms (loops, memchr usage, static functions) rather than substantive copying of logic or structure. Consequently, the snippet appears to be independently authored. Because no code appears to have been copied from the matched packages, there is no license conflict: the snippet\u2019s LGPL\u20112.1 license does not clash with the permissive Zlib, libpng\u20112.0, Apache\u20112.0 licenses, and the strong\u2011copyleft GPL\u20112.0 license of BusyBox is not implicated as no GPL code is incorporated. Therefore the overall risk is low, with the highest\u2011score match serving as the only evidence considered.",
+      "matches_evaluated": [
+        {
+          "package": "zlib",
+          "file_path": "cpp\\zlib\\zlib-master\\deflate.c",
+          "score": 0.8240644,
+          "license": "Zlib",
+          "analysis": "Score is moderate (0.82) but the file is part of a compression library and unrelated to device stream handling. No fingerprint match, so similarity is likely due to generic C patterns. No license conflict."
+        },
+        {
+          "package": "libpng",
+          "file_path": "cpp\\libpng\\libpng-master\\contrib\\tools\\png-fix-itxt.c",
+          "score": 0.80276203,
+          "license": "libpng-2.0",
+          "analysis": "Score moderate (0.80). The source deals with PNG metadata fixing, unrelated to the Mach I/O code. No fingerprint overlap; similarity is incidental. No license issue."
+        },
+        {
+          "package": "busybox",
+          "file_path": "high_risk\\busybox\\busybox-master\\coreutils\\split.c",
+          "score": 0.79872227,
+          "license": "GPL-2.0-only",
+          "analysis": "Score moderate (0.80). This is a command\u2011line file\u2011splitting utility, functionally different. No fingerprint match, indicating no copying. Since GPL code is not incorporated, no copyleft violation arises."
+        },
+        {
+          "package": "opencv",
+          "file_path": "cpp\\opencv\\opencv-master\\3rdparty\\cpufeatures\\cpu-features.c",
+          "score": 0.79299533,
+          "license": "Apache-2.0",
+          "analysis": "Score moderate (0.79). The file provides CPU feature detection, unrelated to the Mach device stream code. No fingerprint equality; similarity is generic. Apache\u20112.0 license does not impose obligations beyond attribution, which is unnecessary here."
+        },
+        {
+          "package": "libav",
+          "file_path": "high_risk\\libav\\libav-master\\libavcodec\\bytestream.h",
+          "score": 0.79267186,
+          "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+          "analysis": "Score moderate (0.79). This header defines bytestream helpers for video codecs, unrelated to the snippet. No fingerprint match; similarity is incidental. The snippet already uses LGPL\u20112.1, so there is no additional licensing conflict."
+        }
+      ]
+    },
+    "verdict": "safe",
+    "infringement_basis": "independent",
+    "license_risk": "none",
+    "reasoning": "Both models arrive at the correct conclusion: the user snippet is independently authored. Model A's detailed analysis is slightly more thorough in breaking down the similarity scores and fingerprint comparisons, but it's ultimately not necessary for determining the outcome. Model B provides a concise and accurate assessment.  The observed similarity scores (ranging from 0.79 to 0.82) reflect generic C coding patterns, not a substantial copying of logic. The fingerprint differences definitively rule out any code duplication. Therefore, there is no license infringement, and the risk is assessed as \u2018safe\u2019.",
+    "model_comparison": {
+      "model_a_score": 9,
+      "model_b_score": 9,
+      "better_model": "Tie",
+      "justification": "Both models provide excellent analysis, arriving at the same correct conclusion with very minor variations in detail."
+    },
+    "error_analysis": {
+      "model_a_issues": [
+        "Minor elaboration of fingerprint logic \u2013 not required for correctness."
+      ],
+      "model_b_issues": [
+        "None"
+      ]
+    }
+  },
+  "ground_truth": {
+    "verdict": "safe",
+    "infringement_basis": "copied",
+    "license_risk": "none",
+    "confidence": "medium",
+    "notes": "its lib file with license text"
+  }
+}

@@ -1,0 +1,233 @@
+{
+  "timestamp": "2025-12-06T20:07:03.333Z",
+  "file_path": "d:\\llmproject\\data\\cpp\\openssl\\openssl-master\\fuzz\\bignum.c",
+  "language": "c",
+  "code_hash": "61332bd16ea2fc016019f8092d03a1db58c68a1a8a3041b82bb28d73a27973ca",
+  "snippet": "/*\n * Copyright 2016-2025 The OpenSSL Project Authors. All Rights Reserved.\n *\n * Licensed under the Apache License 2.0 (the \"License\");\n * you may not use this file except in compliance with the License.\n * You may obtain a copy of the License at\n * https://www.openssl.org/source/license.html\n * or in the file LICENSE in the source distribution.\n */\n\n/*\n * Confirm that a^b mod c agrees when calculated cleverly vs naively, for\n * random a, b and c.\n */\n\n#include <stdio.h>\n#include <openssl/bn.h>\n#include <openssl/err.h>\n#include \"fuzzer.h\"\n\n\nint FuzzerInitialize(int *argc, char ***argv)\n{\n    OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);\n    ERR_clear_error();\n\n    return 1;\n}\n\nint FuzzerTestOneInput(const uint8_t *buf, size_t len)\n{\n    int success = 0;\n    size_t l1 = 0, l2 = 0, l3 = 0;\n    int s1 = 0, s3 = 0;\n    BN_CTX *ctx;\n    BIGNUM *b1;\n    BIGNUM *b2;\n    BIGNUM *b3;\n    BIGNUM *b4;\n    BIGNUM *b5;\n\n    b1 = BN_new();\n    b2 = BN_new();\n    b3 = BN_new();\n    b4 = BN_new();\n    b5 = BN_new();\n    ctx = BN_CTX_new();\n\n    /* Divide the input into three parts, using the values of the first two\n     * bytes to choose lengths, which generate b1, b2 and b3. Use three bits\n     * of the third byte to choose signs for the three numbers.\n     */\n    if (len > 2) {\n        len -= 3;\n        /* limit l1, l2, and l3 to be no more than 512 bytes */\n        l1 = ((buf[0] * len) / 255) % 512;\n        ++buf;\n        l2 = ((buf[0] * (len - l1)) / 255) % 512;\n        ++buf;\n        l3 = (len - l1 - l2) % 512;\n\n        s1 = buf[0] & 1;\n        s3 = buf[0] & 4;\n        ++buf;\n    }\n    OPENSSL_assert(BN_bin2bn(buf, (int)l1, b1) == b1);\n    BN_set_negative(b1, s1);\n    OPENSSL_assert(BN_bin2bn(buf + l1, (int)l2, b2) == b2);\n    OPENSSL_assert(BN_bin2bn(buf + l1 + l2, (int)l3, b3) == b3);\n    BN_set_negative(b3, s3);\n\n    /* mod 0 is undefined */\n    if (BN_is_zero(b3)) {\n        success = 1;\n        goto done;\n    }\n\n    OPENSSL_assert(BN_mod_exp(b4, b1, b2, b3, ctx));\n    OPENSSL_assert(BN_mod_exp_simple(b5, b1, b2, b3, ctx));\n\n    success = BN_cmp(b4, b5) == 0;\n    if (!success) {\n        BN_print_fp(stdout, b1);\n        putchar('\\n');\n        BN_print_fp(stdout, b2);\n        putchar('\\n');\n        BN_print_fp(stdout, b3);\n        putchar('\\n');\n        BN_print_fp(stdout, b4);\n        putchar('\\n');\n        BN_print_fp(stdout, b5);\n        putchar('\\n');\n    }\n\n done:\n    OPENSSL_assert(success);\n    BN_free(b1);\n    BN_free(b2);\n    BN_free(b3);\n    BN_free(b4);\n    BN_free(b5);\n    BN_CTX_free(ctx);\n    ERR_clear_error();\n\n    return 0;\n}\n\nvoid FuzzerCleanup(void)\n{\n}\n",
+  "snippet_length": 2624,
+  "trial_A": {
+    "verdict": "safe",
+    "infringement_basis": "independent",
+    "primary_evidence": [],
+    "license_risk": "none",
+    "reasoning": "The user_snippet is a fuzzing test file from the OpenSSL project itself (fuzz/bignum.c), licensed under Apache-2.0. All five matches are analyzed below:\n\n1. **Match 1** (score: 0.814, openssl/crypto/bsearch.c, Apache-2.0 OR OpenSSL): This match shows moderate-to-high similarity (0.814), but it is from the same OpenSSL project. The file paths differ (fuzz/bignum.c vs crypto/bsearch.c), and the fingerprints are distinct (file_fp: 8c42928f... vs user file, chunk_fp: 65d65e0f...). Since both files are part of the same project and share the same Apache-2.0 license, there is no infringement or license conflict. The similarity likely stems from shared project conventions, header patterns, and coding style.\n\n2. **Match 2** (score: 0.807, openssl/crypto/param_build.c, Apache-2.0 OR OpenSSL): Similar to Match 1, this is from the same OpenSSL project with compatible licensing. The score of 0.807 indicates moderate similarity, likely due to common OpenSSL coding patterns, copyright headers, and API usage. Distinct fingerprints (file_fp: 2118eb82..., chunk_fp: 81b721bc...) confirm these are different implementations. No infringement or license risk.\n\n3. **Match 3** (score: 0.800, busybox/coreutils/echo.c, GPL-2.0-only): This match is from a different project (BusyBox) under GPL-2.0-only, which is a strong copyleft license. However, the similarity score of 0.800, while in the moderate range, is not sufficiently high to indicate copying. The fingerprints are completely different (file_fp: 76a47008..., chunk_fp: 8a5f222e...). The user_snippet is a specialized fuzzing test for BIGNUM modular exponentiation, while the matched file is from BusyBox coreutils (echo.c), suggesting completely different functionality. The similarity is likely coincidental, possibly due to common C language patterns, control flow structures, or standard error handling. Given the distinct purposes, different fingerprints, and the fact that the user code is already properly licensed under Apache-2.0 by OpenSSL, there is no credible evidence of copying or derivative work.\n\n4. **Match 4** (score: 0.800, openssl/crypto/asn1/asn1_parse.c, Apache-2.0 OR OpenSSL): Another match within the OpenSSL project itself. The score of 0.800 suggests moderate similarity, consistent with shared project infrastructure. Different fingerprints (file_fp: ed113419..., chunk_fp: 4aeba92c...) confirm distinct implementations. No license conflict as both are Apache-2.0.\n\n5. **Match 5** (score: 0.795, openssl/crypto/o_str.c, Apache-2.0 OR OpenSSL): Final match is also from OpenSSL with compatible licensing. Score of 0.795 indicates moderate similarity from shared codebase patterns. Distinct fingerprints (file_fp: 4c9cd284..., chunk_fp: f95363b4...). No infringement or license risk.\n\n**Conclusion**: The user_snippet is original OpenSSL code. Four of five matches are from the same OpenSSL project with identical or compatible licensing (Apache-2.0), representing normal intra-project similarity. The single GPL-2.0 match (BusyBox) has insufficient similarity score, completely different functionality and purpose, and distinct fingerprints to establish any copying or derivative relationship. All similarity scores fall in the 0.795-0.814 range (moderate), which does not meet the threshold for 'very high similarity' (>0.85) that would suggest copying. No evidence of copyright infringement or license violation exists.",
+    "matches_evaluated": [
+      {
+        "package": "openssl",
+        "file_path": "cpp\\openssl\\openssl-master\\crypto\\bsearch.c",
+        "score": 0.8141284,
+        "license": "Apache-2.0 OR OpenSSL",
+        "analysis": "Moderate-to-high similarity (0.814) with another file in the same OpenSSL project. Distinct fingerprints indicate different implementations. Same Apache-2.0 license means no conflict. Similarity is expected within the same codebase due to shared conventions and style."
+      },
+      {
+        "package": "openssl",
+        "file_path": "cpp\\openssl\\openssl-master\\crypto\\param_build.c",
+        "score": 0.80684614,
+        "license": "Apache-2.0 OR OpenSSL",
+        "analysis": "Moderate similarity (0.807) with another OpenSSL file. Distinct fingerprints confirm separate implementations. Compatible Apache-2.0 licensing. No infringement risk within the same project."
+      },
+      {
+        "package": "busybox",
+        "file_path": "high_risk\\busybox\\busybox-master\\coreutils\\echo.c",
+        "score": 0.80033886,
+        "license": "GPL-2.0-only",
+        "analysis": "Moderate similarity (0.800) with GPL-2.0-only licensed code from BusyBox. However, the user code is a BIGNUM fuzzing test while the match is from coreutils/echo.c, indicating completely different functionality. Distinct fingerprints and different purposes suggest coincidental similarity from common C patterns, not copying. The score does not reach the high threshold (>0.85) for likely copying. No credible evidence of infringement."
+      },
+      {
+        "package": "openssl",
+        "file_path": "cpp\\openssl\\openssl-master\\crypto\\asn1\\asn1_parse.c",
+        "score": 0.799623,
+        "license": "Apache-2.0 OR OpenSSL",
+        "analysis": "Moderate similarity (0.800) with another OpenSSL project file. Distinct fingerprints indicate different code. Same Apache-2.0 license eliminates any license risk. Normal intra-project similarity."
+      },
+      {
+        "package": "openssl",
+        "file_path": "cpp\\openssl\\openssl-master\\crypto\\o_str.c",
+        "score": 0.7954935,
+        "license": "Apache-2.0 OR OpenSSL",
+        "analysis": "Moderate similarity (0.795) with another OpenSSL file. Distinct fingerprints confirm separate implementations. Compatible Apache-2.0 licensing. No concerns within the same project."
+      }
+    ]
+  },
+  "trial_B": {
+    "verdict": "low_risk",
+    "infringement_basis": "derivative",
+    "primary_evidence": [
+      "highest_score_match",
+      "structural_similarity",
+      "license_conflict"
+    ],
+    "license_risk": "attribution_required",
+    "reasoning": "The user snippet is a fuzz driver that uses OpenSSL APIs (BN_*) and contains an Apache-2.0 license header identical to the licenses of the matched OpenSSL source files. The matches returned have similarity scores between 0.795 and 0.814, which fall in the moderate similarity range (0.70\u20130.85). This suggests that the snippet reuses structural patterns or helper code present in OpenSSL\u2019s code base, but the fingerprints (file_fp and chunk_fp) are different, indicating that no exact chunk was copied verbatim. The most similar match (score 0.814) is to a file within the same OpenSSL repository (crypto\\bsearch.c), and all matches are from the same package (openssl) and share the same dual license \"Apache-2.0 OR OpenSSL\". Because the user snippet already carries an Apache-2.0 header that satisfies the attribution requirement of the OpenSSL license, there is no strong copyleft conflict. Consequently the risk is limited to a possible derivative work that is properly attributed, leading to a low\u2011risk assessment rather than a violation.",
+    "matches_evaluated": [
+      {
+        "package": "openssl",
+        "file_path": "cpp\\openssl\\openssl-master\\crypto\\bsearch.c",
+        "score": 0.8141284,
+        "license": "Apache-2.0 OR OpenSSL",
+        "analysis": "Score 0.814 places the match in the moderate similarity band. The chunk fingerprint does not match the user snippet, so there is no direct copy evidence. The similarity likely stems from common OpenSSL coding patterns (error handling, use of OPENSSL_assert, etc.). License is compatible; user snippet already includes Apache-2.0 attribution."
+      },
+      {
+        "package": "openssl",
+        "file_path": "cpp\\openssl\\openssl-master\\crypto\\param_build.c",
+        "score": 0.80684614,
+        "license": "Apache-2.0 OR OpenSSL",
+        "analysis": "Score 0.807 again shows moderate similarity. No fingerprint match, indicating only structural resemblance. Both files belong to the same OpenSSL project and share the same license, so no additional obligations arise."
+      },
+      {
+        "package": "busybox",
+        "file_path": "high_risk\\busybox\\busybox-master\\coreutils\\echo.c",
+        "score": 0.80033886,
+        "license": "GPL-2.0-only",
+        "analysis": "Score 0.800 suggests moderate similarity, but the matched file is from a completely different ecosystem (busybox) and is licensed under GPL\u20112.0-only, a strong copyleft license. However, the fingerprint differs and the similarity likely reflects generic C idioms rather than substantive code copying. Because there is no evidence of direct copying and the user snippet is under Apache\u20112.0, the GPL license does not create a conflict here."
+      },
+      {
+        "package": "openssl",
+        "file_path": "cpp\\openssl\\openssl-master\\crypto\\asn1\\asn1_parse.c",
+        "score": 0.799623,
+        "license": "Apache-2.0 OR OpenSSL",
+        "analysis": "Score just below 0.80, still moderate. No fingerprint equality; similarity is probably due to shared OpenSSL coding conventions. Licenses align with the user snippet's Apache\u20112.0 header."
+      },
+      {
+        "package": "openssl",
+        "file_path": "cpp\\openssl\\openssl-master\\crypto\\o_str.c",
+        "score": 0.7954935,
+        "license": "Apache-2.0 OR OpenSSL",
+        "analysis": "Score 0.795, moderate similarity. As with other matches, the lack of fingerprint match indicates only structural overlap. License is compatible."
+      }
+    ]
+  },
+  "verdict": "safe",
+  "infringement_basis": "inspired",
+  "license_risk": "attribution_required",
+  "reasoning": "Model A's analysis is more accurate and grounded in the raw input data. Model B hallucinates a 'derivative' infringement basis based on the similarity scores, which are acceptable given the moderate scores and structural overlap. The fingerprint mismatches strongly suggest that the similarities are based on common C coding conventions and library usage rather than direct copying of substantial code.  Model A's explanation is more faithful to the input data, correctly interpreting the fingerprint differences and the compatible Apache-2.0 licenses. The risk of a violation is low and can be addressed by including an attribution requirement as the user snippet is already licensed under Apache-2.0.",
+  "model_comparison": {
+    "model_a_score": 10,
+    "model_b_score": 7,
+    "better_model": "Model_A"
+  },
+  "error_analysis": {
+    "model_a_issues": [],
+    "model_b_issues": [
+      "Hallucinated 'derivative' infringement basis based on scores.",
+      "Misinterpretation of fingerprint differences - the fingerprints are clearly distinct."
+    ]
+  },
+  "raw_output": {
+    "trial_A": {
+      "verdict": "safe",
+      "infringement_basis": "independent",
+      "primary_evidence": [],
+      "license_risk": "none",
+      "reasoning": "The user_snippet is a fuzzing test file from the OpenSSL project itself (fuzz/bignum.c), licensed under Apache-2.0. All five matches are analyzed below:\n\n1. **Match 1** (score: 0.814, openssl/crypto/bsearch.c, Apache-2.0 OR OpenSSL): This match shows moderate-to-high similarity (0.814), but it is from the same OpenSSL project. The file paths differ (fuzz/bignum.c vs crypto/bsearch.c), and the fingerprints are distinct (file_fp: 8c42928f... vs user file, chunk_fp: 65d65e0f...). Since both files are part of the same project and share the same Apache-2.0 license, there is no infringement or license conflict. The similarity likely stems from shared project conventions, header patterns, and coding style.\n\n2. **Match 2** (score: 0.807, openssl/crypto/param_build.c, Apache-2.0 OR OpenSSL): Similar to Match 1, this is from the same OpenSSL project with compatible licensing. The score of 0.807 indicates moderate similarity, likely due to common OpenSSL coding patterns, copyright headers, and API usage. Distinct fingerprints (file_fp: 2118eb82..., chunk_fp: 81b721bc...) confirm these are different implementations. No infringement or license risk.\n\n3. **Match 3** (score: 0.800, busybox/coreutils/echo.c, GPL-2.0-only): This match is from a different project (BusyBox) under GPL-2.0-only, which is a strong copyleft license. However, the similarity score of 0.800, while in the moderate range, is not sufficiently high to indicate copying. The fingerprints are completely different (file_fp: 76a47008..., chunk_fp: 8a5f222e...). The user_snippet is a specialized fuzzing test for BIGNUM modular exponentiation, while the matched file is from BusyBox coreutils (echo.c), suggesting completely different functionality. The similarity is likely coincidental, possibly due to common C language patterns, control flow structures, or standard error handling. Given the distinct purposes, different fingerprints, and the fact that the user code is already properly licensed under Apache-2.0 by OpenSSL, there is no credible evidence of copying or derivative work.\n\n4. **Match 4** (score: 0.800, openssl/crypto/asn1/asn1_parse.c, Apache-2.0 OR OpenSSL): Another match within the OpenSSL project itself. The score of 0.800 suggests moderate similarity, consistent with shared project infrastructure. Different fingerprints (file_fp: ed113419..., chunk_fp: 4aeba92c...) confirm distinct implementations. No license conflict as both are Apache-2.0.\n\n5. **Match 5** (score: 0.795, openssl/crypto/o_str.c, Apache-2.0 OR OpenSSL): Final match is also from OpenSSL with compatible licensing. Score of 0.795 indicates moderate similarity from shared codebase patterns. Distinct fingerprints (file_fp: 4c9cd284..., chunk_fp: f95363b4...). No infringement or license risk.\n\n**Conclusion**: The user_snippet is original OpenSSL code. Four of five matches are from the same OpenSSL project with identical or compatible licensing (Apache-2.0), representing normal intra-project similarity. The single GPL-2.0 match (BusyBox) has insufficient similarity score, completely different functionality and purpose, and distinct fingerprints to establish any copying or derivative relationship. All similarity scores fall in the 0.795-0.814 range (moderate), which does not meet the threshold for 'very high similarity' (>0.85) that would suggest copying. No evidence of copyright infringement or license violation exists.",
+      "matches_evaluated": [
+        {
+          "package": "openssl",
+          "file_path": "cpp\\openssl\\openssl-master\\crypto\\bsearch.c",
+          "score": 0.8141284,
+          "license": "Apache-2.0 OR OpenSSL",
+          "analysis": "Moderate-to-high similarity (0.814) with another file in the same OpenSSL project. Distinct fingerprints indicate different implementations. Same Apache-2.0 license means no conflict. Similarity is expected within the same codebase due to shared conventions and style."
+        },
+        {
+          "package": "openssl",
+          "file_path": "cpp\\openssl\\openssl-master\\crypto\\param_build.c",
+          "score": 0.80684614,
+          "license": "Apache-2.0 OR OpenSSL",
+          "analysis": "Moderate similarity (0.807) with another OpenSSL file. Distinct fingerprints confirm separate implementations. Compatible Apache-2.0 licensing. No infringement risk within the same project."
+        },
+        {
+          "package": "busybox",
+          "file_path": "high_risk\\busybox\\busybox-master\\coreutils\\echo.c",
+          "score": 0.80033886,
+          "license": "GPL-2.0-only",
+          "analysis": "Moderate similarity (0.800) with GPL-2.0-only licensed code from BusyBox. However, the user code is a BIGNUM fuzzing test while the match is from coreutils/echo.c, indicating completely different functionality. Distinct fingerprints and different purposes suggest coincidental similarity from common C patterns, not copying. The score does not reach the high threshold (>0.85) for likely copying. No credible evidence of infringement."
+        },
+        {
+          "package": "openssl",
+          "file_path": "cpp\\openssl\\openssl-master\\crypto\\asn1\\asn1_parse.c",
+          "score": 0.799623,
+          "license": "Apache-2.0 OR OpenSSL",
+          "analysis": "Moderate similarity (0.800) with another OpenSSL project file. Distinct fingerprints indicate different code. Same Apache-2.0 license eliminates any license risk. Normal intra-project similarity."
+        },
+        {
+          "package": "openssl",
+          "file_path": "cpp\\openssl\\openssl-master\\crypto\\o_str.c",
+          "score": 0.7954935,
+          "license": "Apache-2.0 OR OpenSSL",
+          "analysis": "Moderate similarity (0.795) with another OpenSSL file. Distinct fingerprints confirm separate implementations. Compatible Apache-2.0 licensing. No concerns within the same project."
+        }
+      ]
+    },
+    "trial_B": {
+      "verdict": "low_risk",
+      "infringement_basis": "derivative",
+      "primary_evidence": [
+        "highest_score_match",
+        "structural_similarity",
+        "license_conflict"
+      ],
+      "license_risk": "attribution_required",
+      "reasoning": "The user snippet is a fuzz driver that uses OpenSSL APIs (BN_*) and contains an Apache-2.0 license header identical to the licenses of the matched OpenSSL source files. The matches returned have similarity scores between 0.795 and 0.814, which fall in the moderate similarity range (0.70\u20130.85). This suggests that the snippet reuses structural patterns or helper code present in OpenSSL\u2019s code base, but the fingerprints (file_fp and chunk_fp) are different, indicating that no exact chunk was copied verbatim. The most similar match (score 0.814) is to a file within the same OpenSSL repository (crypto\\bsearch.c), and all matches are from the same package (openssl) and share the same dual license \"Apache-2.0 OR OpenSSL\". Because the user snippet already carries an Apache-2.0 header that satisfies the attribution requirement of the OpenSSL license, there is no strong copyleft conflict. Consequently the risk is limited to a possible derivative work that is properly attributed, leading to a low\u2011risk assessment rather than a violation.",
+      "matches_evaluated": [
+        {
+          "package": "openssl",
+          "file_path": "cpp\\openssl\\openssl-master\\crypto\\bsearch.c",
+          "score": 0.8141284,
+          "license": "Apache-2.0 OR OpenSSL",
+          "analysis": "Score 0.814 places the match in the moderate similarity band. The chunk fingerprint does not match the user snippet, so there is no direct copy evidence. The similarity likely stems from common OpenSSL coding patterns (error handling, use of OPENSSL_assert, etc.). License is compatible; user snippet already includes Apache-2.0 attribution."
+        },
+        {
+          "package": "openssl",
+          "file_path": "cpp\\openssl\\openssl-master\\crypto\\param_build.c",
+          "score": 0.80684614,
+          "license": "Apache-2.0 OR OpenSSL",
+          "analysis": "Score 0.807 again shows moderate similarity. No fingerprint match, indicating only structural resemblance. Both files belong to the same OpenSSL project and share the same license, so no additional obligations arise."
+        },
+        {
+          "package": "busybox",
+          "file_path": "high_risk\\busybox\\busybox-master\\coreutils\\echo.c",
+          "score": 0.80033886,
+          "license": "GPL-2.0-only",
+          "analysis": "Score 0.800 suggests moderate similarity, but the matched file is from a completely different ecosystem (busybox) and is licensed under GPL\u20112.0-only, a strong copyleft license. However, the fingerprint differs and the similarity likely reflects generic C idioms rather than substantive code copying. Because there is no evidence of direct copying and the user snippet is under Apache\u20112.0, the GPL license does not create a conflict here."
+        },
+        {
+          "package": "openssl",
+          "file_path": "cpp\\openssl\\openssl-master\\crypto\\asn1\\asn1_parse.c",
+          "score": 0.799623,
+          "license": "Apache-2.0 OR OpenSSL",
+          "analysis": "Score just below 0.80, still moderate. No fingerprint equality; similarity is probably due to shared OpenSSL coding conventions. Licenses align with the user snippet's Apache\u20112.0 header."
+        },
+        {
+          "package": "openssl",
+          "file_path": "cpp\\openssl\\openssl-master\\crypto\\o_str.c",
+          "score": 0.7954935,
+          "license": "Apache-2.0 OR OpenSSL",
+          "analysis": "Score 0.795, moderate similarity. As with other matches, the lack of fingerprint match indicates only structural overlap. License is compatible."
+        }
+      ]
+    },
+    "verdict": "safe",
+    "infringement_basis": "inspired",
+    "license_risk": "attribution_required",
+    "reasoning": "Model A's analysis is more accurate and grounded in the raw input data. Model B hallucinates a 'derivative' infringement basis based on the similarity scores, which are acceptable given the moderate scores and structural overlap. The fingerprint mismatches strongly suggest that the similarities are based on common C coding conventions and library usage rather than direct copying of substantial code.  Model A's explanation is more faithful to the input data, correctly interpreting the fingerprint differences and the compatible Apache-2.0 licenses. The risk of a violation is low and can be addressed by including an attribution requirement as the user snippet is already licensed under Apache-2.0.",
+    "model_comparison": {
+      "model_a_score": 10,
+      "model_b_score": 7,
+      "better_model": "Model_A"
+    },
+    "error_analysis": {
+      "model_a_issues": [],
+      "model_b_issues": [
+        "Hallucinated 'derivative' infringement basis based on scores.",
+        "Misinterpretation of fingerprint differences - the fingerprints are clearly distinct."
+      ]
+    }
+  },
+  "ground_truth": {
+    "verdict": "safe",
+    "infringement_basis": "inspired",
+    "license_risk": "none",
+    "confidence": "low",
+    "notes": "c lib file"
+  }
+}

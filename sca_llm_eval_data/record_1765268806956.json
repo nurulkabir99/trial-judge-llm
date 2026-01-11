@@ -1,0 +1,241 @@
+{
+  "timestamp": "2025-12-09T08:26:46.956Z",
+  "file_path": "d:\\llmproject\\data\\cpp\\opencv\\opencv-master\\samples\\cpp\\camshiftdemo.cpp",
+  "language": "cpp",
+  "code_hash": "f786795a69863edf3753be73248a23d4184dd6a494d422b1614b3c4612ce23ab",
+  "snippet": "#include \"opencv2/core/utility.hpp\"\n#include \"opencv2/video/tracking.hpp\"\n#include \"opencv2/imgproc.hpp\"\n#include \"opencv2/videoio.hpp\"\n#include \"opencv2/highgui.hpp\"\n\n#include <iostream>\n#include <ctype.h>\n\nusing namespace cv;\nusing namespace std;\n\nMat image;\n\nbool backprojMode = false;\nbool selectObject = false;\nint trackObject = 0;\nbool showHist = true;\nPoint origin;\nRect selection;\nint vmin = 10, vmax = 256, smin = 30;\n\n// User draws box around object to track. This triggers CAMShift to start tracking\nstatic void onMouse( int event, int x, int y, int, void* )\n{\n    if( selectObject )\n    {\n        selection.x = MIN(x, origin.x);\n        selection.y = MIN(y, origin.y);\n        selection.width = std::abs(x - origin.x);\n        selection.height = std::abs(y - origin.y);\n\n        selection &= Rect(0, 0, image.cols, image.rows);\n    }\n\n    switch( event )\n    {\n    case EVENT_LBUTTONDOWN:\n        origin = Point(x,y);\n        selection = Rect(x,y,0,0);\n        selectObject = true;\n        break;\n    case EVENT_LBUTTONUP:\n        selectObject = false;\n        if( selection.width > 0 && selection.height > 0 )\n            trackObject = -1;   // Set up CAMShift properties in main() loop\n        break;\n    }\n}\n\nstring hot_keys =\n    \"\\n\\nHot keys: \\n\"\n    \"\\tESC - quit the program\\n\"\n    \"\\tc - stop the tracking\\n\"\n    \"\\tb - switch to/from backprojection view\\n\"\n    \"\\th - show/hide object histogram\\n\"\n    \"\\tp - pause video\\n\"\n    \"To initialize tracking, select the object with mouse\\n\";\n\nstatic void help(const char** argv)\n{\n    cout << \"\\nThis is a demo that shows mean-shift based tracking\\n\"\n            \"You select a color objects such as your face and it tracks it.\\n\"\n            \"This reads from video camera (0 by default, or the camera number the user enters\\n\"\n            \"Usage: \\n\\t\";\n    cout << argv[0] << \" [camera number]\\n\";\n    cout << hot_keys;\n}\n\nconst char* keys =\n{\n    \"{help h | | show help message}{@camera_number| 0 | camera number}\"\n};\n\nint main( int argc, const char** argv )\n{\n    VideoCapture cap;\n    Rect trackWindow;\n    int hsize = 16;\n    float hranges[] = {0,180};\n    const float* phranges = hranges;\n    CommandLineParser parser(argc, argv, keys);\n    if (parser.has(\"help\"))\n    {\n        help(argv);\n        return 0;\n    }\n    int camNum = parser.get<int>(0);\n    cap.open(camNum);\n\n    if( !cap.isOpened() )\n    {\n        help(argv);\n        cout << \"***Could not initialize capturing...***\\n\";\n        cout << \"Current parameter's value: \\n\";\n        parser.printMessage();\n        return -1;\n    }\n    cout << hot_keys;\n    namedWindow( \"Histogram\", 0 );\n    namedWindow( \"CamShift Demo\", 0 );\n    setMouseCallback( \"CamShift Demo\", onMouse, 0 );\n    createTrackbar( \"Vmin\", \"CamShift Demo\", &vmin, 256, 0 );\n    createTrackbar( \"Vmax\", \"CamShift Demo\", &vmax, 256, 0 );\n    createTrackbar( \"Smin\", \"CamShift Demo\", &smin, 256, 0 );\n\n    Mat frame, hsv, hue, mask, hist, histimg = Mat::zeros(200, 320, CV_8UC3), backproj;\n    bool paused = false;\n\n    for(;;)\n    {\n        if( !paused )\n        {\n            cap >> frame;\n            if( frame.empty() )\n                break;\n        }\n\n        frame.copyTo(image);\n\n        if( !paused )\n        {\n            cvtColor(image, hsv, COLOR_BGR2HSV);\n\n            if( trackObject )\n            {\n                int _vmin = vmin, _vmax = vmax;\n\n                inRange(hsv, Scalar(0, smin, MIN(_vmin,_vmax)),\n                        Scalar(180, 256, MAX(_vmin, _vmax)), mask);\n                int ch[] = {0, 0};\n                hue.create(hsv.size(), hsv.depth());\n                mixChannels(&hsv, 1, &hue, 1, ch, 1);\n\n                if( trackObject < 0 )\n                {\n                    // Object has been selected by user, set up CAMShift search properties once\n                    Mat roi(hue, selection), maskroi(mask, selection);\n                    calcHist(&roi, 1, 0, maskroi, hist, 1, &hsize, &phranges);\n                    normalize(hist, hist, 0, 255, NORM_MINMAX);\n\n                    trackWindow = selection;\n                    trackObject = 1; // Don't set up again, unless user selects new ROI\n\n                    histimg = Scalar::all(0);\n                    int binW = histimg.cols / hsize;\n                    Mat buf(1, hsize, CV_8UC3);\n                    for( int i = 0; i < hsize; i++ )\n                        buf.at<Vec3b>(i) = Vec3b(saturate_cast<uchar>(i*180./hsize), 255, 255);\n                    cvtColor(buf, buf, COLOR_HSV2BGR);\n\n                    for( int i = 0; i < hsize; i++ )\n                    {\n                        int val = saturate_cast<int>(hist.at<float>(i)*histimg.rows/255);\n                        rectangle( histimg, Point(i*binW,histimg.rows),\n                                   Point((i+1)*binW,histimg.rows - val),\n                                   Scalar(buf.at<Vec3b>(i)), -1, 8 );\n                    }\n                }\n\n                // Perform CAMShift\n                calcBackProject(&hue, 1, 0, hist, backproj, &phranges);\n                backproj &= mask;\n                RotatedRect trackBox = CamShift(backproj, trackWindow,\n                                    TermCriteria( TermCriteria::EPS | TermCriteria::COUNT, 10, 1 ));\n                if( trackWindow.area() <= 1 )\n                {\n                    int cols = backproj.cols, rows = backproj.rows, r = (MIN(cols, rows) + 5)/6;\n                    trackWindow = Rect(trackWindow.x - r, trackWindow.y - r,\n                                       trackWindow.x + r, trackWindow.y + r) &\n                                  Rect(0, 0, cols, rows);\n                }\n\n                if( backprojMode )\n                    cvtColor( backproj, image, COLOR_GRAY2BGR );\n                ellipse( image, trackBox, Scalar(0,0,255), 3, LINE_AA );\n            }\n        }\n        else if( trackObject < 0 )\n            paused = false;\n\n        if( selectObject && selection.width > 0 && selection.height > 0 )\n        {\n            Mat roi(image, selection);\n            bitwise_not(roi, roi);\n        }\n\n        imshow( \"CamShift Demo\", image );\n        imshow( \"Histogram\", histimg );\n\n        char c = (char)waitKey(10);\n        if( c == 27 )\n            break;\n        switch(c)\n        {\n        case 'b':\n            backprojMode = !backprojMode;\n            break;\n        case 'c':\n            trackObject = 0;\n            histimg = Scalar::all(0);\n            break;\n        case 'h':\n            showHist = !showHist;\n            if( !showHist )\n                destroyWindow( \"Histogram\" );\n            else\n                namedWindow( \"Histogram\", 1 );\n            break;\n        case 'p':\n            paused = !paused;\n            break;\n        default:\n            ;\n        }\n    }\n\n    return 0;\n}\n",
+  "snippet_length": 6760,
+  "trial_A": {
+    "verdict": "high_risk",
+    "infringement_basis": "copied",
+    "primary_evidence": [
+      "highest_score_match",
+      "structural_similarity",
+      "license_conflict"
+    ],
+    "license_risk": "strong_copyleft_violation",
+    "reasoning": "The user_snippet is a complete OpenCV CAMShift tracking demo application located at 'd:\\llmproject\\data\\cpp\\opencv\\opencv-master\\samples\\cpp\\camshiftdemo.cpp'. This file appears to be part of the OpenCV repository sample code. Five matches were found with similarity scores ranging from 0.7366 to 0.7423, all falling within the 0.70-0.85 range indicating moderate to high similarity, suggesting possible heavy inspiration or partial copying.\n\nThe highest scoring match (0.7423) is from 'libav/libav-master/libavcodec/a64multienc.c' with dual licensing 'LGPL-2.1-or-later AND GPL-2.0-or-later'. Three other matches are from FFmpeg-related packages: one from 'cpp/ffmpeg' (score 0.7385) and one from 'high_risk/ffmpeg-gpl' (identical score 0.7385, same file path 'fftools/ffmpeg_filter.c', identical fingerprints file_fp: a6c860c37327fecbe815ae77bc0b57ac4d7ec562, chunk_fp: 659205b786605fba89a02c1aa01187cb8558b474) both under GPL-2.0-or-later licensing. The identical fingerprints between the two FFmpeg matches indicate these are the same file in different package distributions.\n\nCritically, multiple matches carry strong copyleft licenses (GPL-2.0-or-later, LGPL-2.1-or-later). The structural similarity scores above 0.70 combined with GPL-licensed matches create significant legal risk. While the user_snippet is OpenCV sample code (typically BSD-licensed), the detection of similarity to GPL-licensed FFmpeg/libav code raises concerns about potential code reuse or shared algorithmic patterns that could trigger GPL obligations.\n\nThe consistent moderate-to-high similarity scores (all above 0.73) across multiple GPL/LGPL-licensed multimedia processing libraries (libav, FFmpeg) suggest this code may have borrowed from or shares substantial similarity with copyleft-licensed implementations. This creates a strong copyleft violation risk, particularly given that GPL-2.0 requires derivative works to be licensed under GPL, which would conflict with OpenCV's BSD licensing model.\n\nWhile the matches are from different files (video codec files vs. tracking demo), the similarity scores are concerning enough to warrant legal review, especially given the presence of identical fingerprints in GPL-licensed packages and the structural similarities detected across multiple copyleft-licensed codebases.",
+    "matches_evaluated": [
+      {
+        "package": "libav",
+        "file_path": "high_risk\\libav\\libav-master\\libavcodec\\a64multienc.c",
+        "score": 0.7423588,
+        "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+        "analysis": "Highest scoring match at 0.7423, indicating moderate-to-high similarity. This is a video codec encoder file from libav with dual LGPL/GPL licensing. The score suggests possible heavy inspiration or partial code reuse. The dual licensing with GPL-2.0 component creates strong copyleft obligations if this represents actual copying or derivative work."
+      },
+      {
+        "package": "ffmpeg",
+        "file_path": "cpp\\ffmpeg\\FFmpeg-master\\fftools\\ffmpeg_filter.c",
+        "score": 0.7385317,
+        "license": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+        "analysis": "Second highest match at 0.7385 from FFmpeg's filter tool code. This file carries dual GPL-2.0/LGPL-2.1 licensing with strong copyleft implications. The similarity score indicates moderate-to-high structural resemblance, raising concerns about potential derivative work status under GPL."
+      },
+      {
+        "package": "ffmpeg-gpl",
+        "file_path": "high_risk\\ffmpeg-gpl\\FFmpeg-master\\fftools\\ffmpeg_filter.c",
+        "score": 0.7385317,
+        "license": "GPL-2.0-or-later",
+        "analysis": "Identical score (0.7385) and identical fingerprints (file_fp: a6c860c37327fecbe815ae77bc0b57ac4d7ec562, chunk_fp: 659205b786605fba89a02c1aa01187cb8558b474) to the previous FFmpeg match, indicating this is the same code distributed as GPL-only. The identical fingerprints provide very strong evidence that these matches reference the exact same underlying code, strengthening the copyleft violation concern under strict GPL-2.0-or-later terms."
+      },
+      {
+        "package": "libav",
+        "file_path": "high_risk\\libav\\libav-master\\libavcodec\\cavs.h",
+        "score": 0.7369095,
+        "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+        "analysis": "Score of 0.7369 from a libav codec header file with dual LGPL/GPL licensing. The moderate similarity combined with copyleft licensing continues the pattern of concerning overlap with GPL-licensed multimedia processing code."
+      },
+      {
+        "package": "ffmpeg",
+        "file_path": "cpp\\ffmpeg\\FFmpeg-master\\libavcodec\\aom_film_grain_template.c",
+        "score": 0.73665607,
+        "license": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+        "analysis": "Score of 0.7366 from FFmpeg's AOM film grain template code with dual GPL-2.0/LGPL-2.1 licensing. While the lowest scoring match, it still falls within the moderate similarity range (0.70-0.85) and reinforces the pattern of structural similarity to copyleft-licensed video processing code."
+      }
+    ]
+  },
+  "trial_B": {
+    "verdict": "low_risk",
+    "infringement_basis": "independent",
+    "primary_evidence": [
+      "highest_score_match",
+      "structural_similarity"
+    ],
+    "license_risk": "none",
+    "reasoning": "The five matches returned have similarity scores in the 0.73\u20110.74 range, which falls into the moderate similarity band (0.70\u20110.85). Moderate scores can indicate heavy inspiration or partial copying, but they can also arise from generic programming constructs (e.g., loops, conditionals, variable names). In this case the matched files are from libav/ffmpeg codec and filter source code (e.g., a64multienc.c, ffmpeg_filter.c, cavs.h, aom_film_grain_template.c), which implement low\u2011level video encoding/decoding functionality. The user snippet is an OpenCV sample that demonstrates CAMShift\u2011based object tracking using high\u2011level APIs. The functional domains, APIs, and overall program structure are completely different. No fingerprint (file_fp or chunk_fp) matches the user file, indicating no direct copy\u2011paste of code blocks. Consequently, the similarity is most plausibly incidental rather than substantive copying. Because there is no evidence of actual code reuse, there is no license inheritance, and the user code does not inherit the GPL/LGPL obligations of the matched packages. Therefore the overall risk is low, with no license conflict.",
+    "matches_evaluated": [
+      {
+        "package": "libav",
+        "file_path": "high_risk\\libav\\libav-master\\libavcodec\\a64multienc.c",
+        "score": 0.7423588,
+        "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+        "analysis": "Score 0.742 indicates moderate similarity. The matched chunk is part of a low\u2011level audio/video encoder (a64multienc.c). The user code is an OpenCV CAMShift demo; the two have different purposes and APIs. No fingerprint equality is present, so the similarity likely stems from generic C++ constructs, not from copying. No inferred license conflict."
+      },
+      {
+        "package": "ffmpeg",
+        "file_path": "cpp\\ffmpeg\\FFmpeg-master\\fftools\\ffmpeg_filter.c",
+        "score": 0.7385317,
+        "license": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+        "analysis": "Score 0.739 is moderate. The matched file implements command\u2011line filter handling for FFmpeg, unrelated to the OpenCV tracking demo. No fingerprint match. The similarity is probably coincidental. License is GPL/LGPL but does not affect the user code given the lack of copying."
+      },
+      {
+        "package": "ffmpeg-gpl",
+        "file_path": "high_risk\\ffmpeg-gpl\\FFmpeg-master\\fftools\\ffmpeg_filter.c",
+        "score": 0.7385317,
+        "license": "GPL-2.0-or-later",
+        "analysis": "Identical score and file as the previous entry but listed under a different package with a pure GPL license. Same reasoning applies: functional mismatch, no identical fingerprints, therefore no evidence of copying; no license risk."
+      },
+      {
+        "package": "libav",
+        "file_path": "high_risk\\libav\\libav-master\\libavcodec\\cavs.h",
+        "score": 0.7369095,
+        "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+        "analysis": "Score 0.737, moderate similarity. This header defines codec\u2011specific constants for the CAVS format, unrelated to the CAMShift demo. No fingerprint overlap. The similarity is superficial; no license impact."
+      },
+      {
+        "package": "ffmpeg",
+        "file_path": "cpp\\ffmpeg\\FFmpeg-master\\libavcodec\\aom_film_grain_template.c",
+        "score": 0.73665607,
+        "license": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+        "analysis": "Score 0.737, moderate similarity. The file provides an AV1 film\u2011grain template implementation, again unrelated to the OpenCV sample. No fingerprint match, so no indication of code reuse. License obligations do not propagate."
+      }
+    ]
+  },
+  "verdict": "high_risk",
+  "infringement_basis": "derivative",
+  "license_risk": "strong_copyleft_violation",
+  "reasoning": "Model A correctly identifies a high risk of infringement. The raw input data demonstrates a substantial level of structural similarity (scores of 0.73-0.74) between the user code and files from FFmpeg and LibAV. These files implement low-level video encoding/decoding, which is directly relevant to the core functionality of the user code. The fingerprints do not match, but the evidence of structural similarity is significant enough to conclude a derivative work and strong copyleft obligation under GPL/LGPL.",
+  "model_comparison": {
+    "model_a_score": 10,
+    "model_b_score": 2,
+    "better_model": "Model_A"
+  },
+  "error_analysis": {
+    "model_a_issues": [],
+    "model_b_issues": [
+      "Incorrectly assesses similarity scores as indicative of a low risk, failing to recognize the relevant functionality and substantial overlap.",
+      "Fails to account for the GPL/LGPL licensing obligations.",
+      "Incorrectly identifies the 'independent' nature of the code."
+    ]
+  },
+  "raw_output": {
+    "trial_A": {
+      "verdict": "high_risk",
+      "infringement_basis": "copied",
+      "primary_evidence": [
+        "highest_score_match",
+        "structural_similarity",
+        "license_conflict"
+      ],
+      "license_risk": "strong_copyleft_violation",
+      "reasoning": "The user_snippet is a complete OpenCV CAMShift tracking demo application located at 'd:\\llmproject\\data\\cpp\\opencv\\opencv-master\\samples\\cpp\\camshiftdemo.cpp'. This file appears to be part of the OpenCV repository sample code. Five matches were found with similarity scores ranging from 0.7366 to 0.7423, all falling within the 0.70-0.85 range indicating moderate to high similarity, suggesting possible heavy inspiration or partial copying.\n\nThe highest scoring match (0.7423) is from 'libav/libav-master/libavcodec/a64multienc.c' with dual licensing 'LGPL-2.1-or-later AND GPL-2.0-or-later'. Three other matches are from FFmpeg-related packages: one from 'cpp/ffmpeg' (score 0.7385) and one from 'high_risk/ffmpeg-gpl' (identical score 0.7385, same file path 'fftools/ffmpeg_filter.c', identical fingerprints file_fp: a6c860c37327fecbe815ae77bc0b57ac4d7ec562, chunk_fp: 659205b786605fba89a02c1aa01187cb8558b474) both under GPL-2.0-or-later licensing. The identical fingerprints between the two FFmpeg matches indicate these are the same file in different package distributions.\n\nCritically, multiple matches carry strong copyleft licenses (GPL-2.0-or-later, LGPL-2.1-or-later). The structural similarity scores above 0.70 combined with GPL-licensed matches create significant legal risk. While the user_snippet is OpenCV sample code (typically BSD-licensed), the detection of similarity to GPL-licensed FFmpeg/libav code raises concerns about potential code reuse or shared algorithmic patterns that could trigger GPL obligations.\n\nThe consistent moderate-to-high similarity scores (all above 0.73) across multiple GPL/LGPL-licensed multimedia processing libraries (libav, FFmpeg) suggest this code may have borrowed from or shares substantial similarity with copyleft-licensed implementations. This creates a strong copyleft violation risk, particularly given that GPL-2.0 requires derivative works to be licensed under GPL, which would conflict with OpenCV's BSD licensing model.\n\nWhile the matches are from different files (video codec files vs. tracking demo), the similarity scores are concerning enough to warrant legal review, especially given the presence of identical fingerprints in GPL-licensed packages and the structural similarities detected across multiple copyleft-licensed codebases.",
+      "matches_evaluated": [
+        {
+          "package": "libav",
+          "file_path": "high_risk\\libav\\libav-master\\libavcodec\\a64multienc.c",
+          "score": 0.7423588,
+          "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+          "analysis": "Highest scoring match at 0.7423, indicating moderate-to-high similarity. This is a video codec encoder file from libav with dual LGPL/GPL licensing. The score suggests possible heavy inspiration or partial code reuse. The dual licensing with GPL-2.0 component creates strong copyleft obligations if this represents actual copying or derivative work."
+        },
+        {
+          "package": "ffmpeg",
+          "file_path": "cpp\\ffmpeg\\FFmpeg-master\\fftools\\ffmpeg_filter.c",
+          "score": 0.7385317,
+          "license": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+          "analysis": "Second highest match at 0.7385 from FFmpeg's filter tool code. This file carries dual GPL-2.0/LGPL-2.1 licensing with strong copyleft implications. The similarity score indicates moderate-to-high structural resemblance, raising concerns about potential derivative work status under GPL."
+        },
+        {
+          "package": "ffmpeg-gpl",
+          "file_path": "high_risk\\ffmpeg-gpl\\FFmpeg-master\\fftools\\ffmpeg_filter.c",
+          "score": 0.7385317,
+          "license": "GPL-2.0-or-later",
+          "analysis": "Identical score (0.7385) and identical fingerprints (file_fp: a6c860c37327fecbe815ae77bc0b57ac4d7ec562, chunk_fp: 659205b786605fba89a02c1aa01187cb8558b474) to the previous FFmpeg match, indicating this is the same code distributed as GPL-only. The identical fingerprints provide very strong evidence that these matches reference the exact same underlying code, strengthening the copyleft violation concern under strict GPL-2.0-or-later terms."
+        },
+        {
+          "package": "libav",
+          "file_path": "high_risk\\libav\\libav-master\\libavcodec\\cavs.h",
+          "score": 0.7369095,
+          "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+          "analysis": "Score of 0.7369 from a libav codec header file with dual LGPL/GPL licensing. The moderate similarity combined with copyleft licensing continues the pattern of concerning overlap with GPL-licensed multimedia processing code."
+        },
+        {
+          "package": "ffmpeg",
+          "file_path": "cpp\\ffmpeg\\FFmpeg-master\\libavcodec\\aom_film_grain_template.c",
+          "score": 0.73665607,
+          "license": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+          "analysis": "Score of 0.7366 from FFmpeg's AOM film grain template code with dual GPL-2.0/LGPL-2.1 licensing. While the lowest scoring match, it still falls within the moderate similarity range (0.70-0.85) and reinforces the pattern of structural similarity to copyleft-licensed video processing code."
+        }
+      ]
+    },
+    "trial_B": {
+      "verdict": "low_risk",
+      "infringement_basis": "independent",
+      "primary_evidence": [
+        "highest_score_match",
+        "structural_similarity"
+      ],
+      "license_risk": "none",
+      "reasoning": "The five matches returned have similarity scores in the 0.73\u20110.74 range, which falls into the moderate similarity band (0.70\u20110.85). Moderate scores can indicate heavy inspiration or partial copying, but they can also arise from generic programming constructs (e.g., loops, conditionals, variable names). In this case the matched files are from libav/ffmpeg codec and filter source code (e.g., a64multienc.c, ffmpeg_filter.c, cavs.h, aom_film_grain_template.c), which implement low\u2011level video encoding/decoding functionality. The user snippet is an OpenCV sample that demonstrates CAMShift\u2011based object tracking using high\u2011level APIs. The functional domains, APIs, and overall program structure are completely different. No fingerprint (file_fp or chunk_fp) matches the user file, indicating no direct copy\u2011paste of code blocks. Consequently, the similarity is most plausibly incidental rather than substantive copying. Because there is no evidence of actual code reuse, there is no license inheritance, and the user code does not inherit the GPL/LGPL obligations of the matched packages. Therefore the overall risk is low, with no license conflict.",
+      "matches_evaluated": [
+        {
+          "package": "libav",
+          "file_path": "high_risk\\libav\\libav-master\\libavcodec\\a64multienc.c",
+          "score": 0.7423588,
+          "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+          "analysis": "Score 0.742 indicates moderate similarity. The matched chunk is part of a low\u2011level audio/video encoder (a64multienc.c). The user code is an OpenCV CAMShift demo; the two have different purposes and APIs. No fingerprint equality is present, so the similarity likely stems from generic C++ constructs, not from copying. No inferred license conflict."
+        },
+        {
+          "package": "ffmpeg",
+          "file_path": "cpp\\ffmpeg\\FFmpeg-master\\fftools\\ffmpeg_filter.c",
+          "score": 0.7385317,
+          "license": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+          "analysis": "Score 0.739 is moderate. The matched file implements command\u2011line filter handling for FFmpeg, unrelated to the OpenCV tracking demo. No fingerprint match. The similarity is probably coincidental. License is GPL/LGPL but does not affect the user code given the lack of copying."
+        },
+        {
+          "package": "ffmpeg-gpl",
+          "file_path": "high_risk\\ffmpeg-gpl\\FFmpeg-master\\fftools\\ffmpeg_filter.c",
+          "score": 0.7385317,
+          "license": "GPL-2.0-or-later",
+          "analysis": "Identical score and file as the previous entry but listed under a different package with a pure GPL license. Same reasoning applies: functional mismatch, no identical fingerprints, therefore no evidence of copying; no license risk."
+        },
+        {
+          "package": "libav",
+          "file_path": "high_risk\\libav\\libav-master\\libavcodec\\cavs.h",
+          "score": 0.7369095,
+          "license": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+          "analysis": "Score 0.737, moderate similarity. This header defines codec\u2011specific constants for the CAVS format, unrelated to the CAMShift demo. No fingerprint overlap. The similarity is superficial; no license impact."
+        },
+        {
+          "package": "ffmpeg",
+          "file_path": "cpp\\ffmpeg\\FFmpeg-master\\libavcodec\\aom_film_grain_template.c",
+          "score": 0.73665607,
+          "license": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+          "analysis": "Score 0.737, moderate similarity. The file provides an AV1 film\u2011grain template implementation, again unrelated to the OpenCV sample. No fingerprint match, so no indication of code reuse. License obligations do not propagate."
+        }
+      ]
+    },
+    "verdict": "high_risk",
+    "infringement_basis": "derivative",
+    "license_risk": "strong_copyleft_violation",
+    "reasoning": "Model A correctly identifies a high risk of infringement. The raw input data demonstrates a substantial level of structural similarity (scores of 0.73-0.74) between the user code and files from FFmpeg and LibAV. These files implement low-level video encoding/decoding, which is directly relevant to the core functionality of the user code. The fingerprints do not match, but the evidence of structural similarity is significant enough to conclude a derivative work and strong copyleft obligation under GPL/LGPL.",
+    "model_comparison": {
+      "model_a_score": 10,
+      "model_b_score": 2,
+      "better_model": "Model_A"
+    },
+    "error_analysis": {
+      "model_a_issues": [],
+      "model_b_issues": [
+        "Incorrectly assesses similarity scores as indicative of a low risk, failing to recognize the relevant functionality and substantial overlap.",
+        "Fails to account for the GPL/LGPL licensing obligations.",
+        "Incorrectly identifies the 'independent' nature of the code."
+      ]
+    }
+  },
+  "ground_truth": {
+    "verdict": "high_risk",
+    "infringement_basis": "copied",
+    "license_risk": "strong_copyleft_violation",
+    "confidence": "high",
+    "notes": "i copy from git"
+  }
+}
